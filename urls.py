@@ -6,7 +6,6 @@ from ldap_profile import views as ldap_views
 
 urlpatterns = patterns(
     '',
-    url(r'^hello/$', ldap_views.hello),
     url(r'^profile/$', ldap_views.view_profile),
     url(r'^profile/change_password/$', ldap_views.change_password,
         name='ldap_change_password'),

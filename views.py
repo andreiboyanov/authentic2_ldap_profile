@@ -1,65 +1,52 @@
-from django.http import HttpResponse
-from ldap_profile.models import Profile, ProfileFormateur, ProfileEncadrant,\
-    ProfileParticipant
-from django.core.exceptions import FieldError, MultipleObjectsReturned
+from django.http import HttpResponseRedirect
 from django.template import RequestContext
+from django.views.generic.edit import UpdateView
 from django.shortcuts import render_to_response
+from authentic2.decorators import prevent_access_to_transient_users
+from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned
+
+import forms
+from models import get_profile, Profile
 
 
-def hello(request):
-    return HttpResponse("Hello world")
-
-
-def _check_profile_result(profiles):
-    if len(profiles) > 1:
-        raise(MultipleObjectsReturned('Email must be unique'))
-    else:
-        return profiles[0]
-
-
-# FIXME: Move this method in the Profile class
-# FIXME: Do it with a single LDAP call instead of 2 as actually
-def _get_profile(user):
-    profile = Profile.objects.filter(email=user.email)
-    profile = _check_profile_result(profile)
-    profile_types = {
-        'ou=formateur': ProfileFormateur,
-        'ou=encadrant': ProfileEncadrant,
-        'ou=participant': ProfileParticipant,
-    }
-    profile_object = None
-    for profile_type in profile_types:
-        if profile_type in profile.dn:
-            profile_object = profile_types[profile_type]
-            break
-    if profile_object:
-        profile = getattr(profile_object,
-                          'objects').filter(email=user.email)
-        profile = _check_profile_result(profile)
-    else:
-        raise(FieldError('Unknown profile type. Must be in {}'.
-                         format(profile_type.keys())))
-    return profile
-
-
+@prevent_access_to_transient_users
 def view_profile(request):
-    profile = _get_profile(request.user)
-    profile_list = [(field.name, [getattr(profile, field.name), ])
-                    for field in profile._meta.fields]
-    return render_to_response('profile.html', {
-        'profile': profile_list, }, RequestContext(request))
+    try:
+        profile = get_profile(request.user)
+        if profile is None:
+            return HttpResponseRedirect("/logout/")
+        profile_list = [(field.name, [getattr(profile, field.name), ])
+                        for field in profile._meta.fields]
+        return render_to_response('ldap_profile.html',
+                                  {'profile': profile_list, },
+                                  RequestContext(request))
+    except (ObjectDoesNotExist):
+        return HttpResponseRedirect("/logout/")
+    except (MultipleObjectsReturned):
+        return HttpResponseRedirect("/profile/ldap_error")
 
 
+
+@prevent_access_to_transient_users
 def change_password(request):
     pass
 
 
+@prevent_access_to_transient_users
 def change_email(request):
     pass
 
 
-def edit_profile(request):
-    pass
+class EditProfile(UpdateView):
+    template_name = 'edit_ldap_profile.html'
+    success_url = '../'
 
+    def get_object(self):
+        self.model = Profile
+        self.form_class = forms.LdapProfileForm(self.request)
+        return get_profile(self.request.user)
+
+
+edit_profile = prevent_access_to_transient_users(EditProfile.as_view())
 
 # End
